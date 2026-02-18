@@ -1,0 +1,15 @@
+#Enable on restart at multi-user.target
+sudo systemctl daemon-reload
+sudo systemctl enable --now voting-tcp.service
+sudo systemctl enable --now voting-gateway.service
+
+#Process status
+sudo systemctl status voting-gateway.service
+sudo journalctl -u voting-gateway.service -f
+
+#Stop and start processes
+sudo systemctl stop voting-gateway.service
+sudo systemctl stop voting-tcp.service
+
+sudo systemctl start voting-tcp.service
+sudo systemctl start voting-gateway.service

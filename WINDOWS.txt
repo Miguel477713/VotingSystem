@@ -1,0 +1,21 @@
+Powershell commands
+--------------------------------------------------------------------------------------
+Remove permissions so SSH does not fail
+
+# Remove inherited permissions
+icacls .\squareroot.pem /inheritance:r
+
+# Remove common broad principals (may or may not exist; errors are ok)
+icacls .\squareroot.pem /remove "NT AUTHORITY\Authenticated Users" "BUILTIN\Users" "Everyone" 2>$null
+
+# Grant read permission ONLY to your user
+icacls .\squareroot.pem /grant:r "$($env:USERNAME):(R)"
+
+---------------------------------------------------------------------------------------
+Create ssh agent to  securely store private SSH KEY securely stores your private SSH
+
+Set-Service -Name ssh-agent -StartupType Manual
+Start-Service ssh-agent
+Get-Service ssh-agent
+ssh-add squareroot.pem
+scp Server.py HTTPGateway.py azureuser@20.120.242.3:~/voting/
