@@ -1,0 +1,13 @@
+[Unit]
+Description=Voting TCP Server
+After=network.target
+
+[Service]
+WorkingDirectory=/home/azureuser/voting
+ExecStart=/usr/bin/python3 /home/azureuser/voting/Server.py
+Restart=always
+RestartSec=2
+User=azureuser
+
+[Install]
+WantedBy=multi-user.target
