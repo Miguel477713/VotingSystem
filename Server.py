@@ -1,10 +1,9 @@
-#!/usr/bin/env python3
 import socket
 import threading
 import time
 from typing import Dict, Set, Tuple
 
-host = "0.0.0.0"
+host = "0.0.0.0" #all network interfaces
 port = 5050
 
 options = ["A", "B", "C"]
@@ -17,9 +16,16 @@ stateLock = threading.Lock()
 logLock = threading.Lock()
 
 
+
 def Audit(event: str) -> None:
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     line = f"{timestamp} {event}\n"
+    #with is equivalent to:
+    #logLock.acquire()
+    #try:
+        # critical section
+    #finally:
+    #    logLock.release()
     with logLock:
         with open(auditLogFile, "a", encoding="utf-8") as file:
             file.write(line)
@@ -30,14 +36,16 @@ def SendLine(connection: socket.socket, message: str) -> None:
 
 
 def ReceiveLine(connection: socket.socket, bufferData: bytearray) -> Tuple[str | None, bytearray]:
-    while True:
+    while True:#data arrives in pieces
         newlineIndex = bufferData.find(b"\n")
         if newlineIndex != -1:
             line = bufferData[:newlineIndex].decode("utf-8", errors="replace").rstrip("\r")
             bufferData = bufferData[newlineIndex + 1:]
-            return line, bufferData
+            #line: command at a time delimited by \n
+            #bufferData: unprocessed stream \n
+            return line, bufferData 
 
-        data = connection.recv(4096)
+        data = connection.recv(4096) #4096 as byte limit, Blocking state
         if not data:
             return None, bufferData
         bufferData.extend(data)
@@ -140,18 +148,20 @@ def Main() -> None:
     Audit(f"SERVER_START host={host} port={port} options={options}")
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as serverSocket:
-        serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)#interminence 
         serverSocket.bind((host, port))
-        serverSocket.listen(50)
+        serverSocket.listen(50) #waiting clients in queue
 
         print(f"[server] Listening on {host}:{port} options={options}")
 
         while True:
+            #connection: new socket, not the listener serverSocket
+            #address: public ip and port of client 
             connection, address = serverSocket.accept()
-            thread = threading.Thread(
+            thread = threading.Thread( #after thread, loop goes back to waiting for an accept
                 target=HandleClient,
                 args=(connection, address),
-                daemon=True
+                daemon=True #terminate threads with script
             )
             thread.start()
 

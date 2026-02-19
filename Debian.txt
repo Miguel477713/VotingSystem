@@ -8,8 +8,5 @@ sudo systemctl status voting-gateway.service
 sudo journalctl -u voting-gateway.service -f
 
 #Stop and start processes
-sudo systemctl stop voting-gateway.service
-sudo systemctl stop voting-tcp.service
-
-sudo systemctl start voting-tcp.service
-sudo systemctl start voting-gateway.service
+sudo systemctl stop voting-gateway.service voting-tcp.service
+sudo systemctl start voting-tcp.service voting-gateway.service

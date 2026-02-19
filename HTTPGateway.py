@@ -1,8 +1,9 @@
-#!/usr/bin/env python3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import socket
 import urllib.parse
+from typing import Tuple
 
+#The server
 tcpHost = "127.0.0.1"
 tcpPort = 5050
 
@@ -12,16 +13,17 @@ httpPort = 8080
 
 def TcpSendCommands(commands: list[str], timeoutSeconds: float = 3.0) -> list[str]:
     responses: list[str] = []
+    bufferData = bytearray()
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as clientSocket:
         clientSocket.settimeout(timeoutSeconds)
         clientSocket.connect((tcpHost, tcpPort))
 
-        ReceiveLine(clientSocket)
+        _, bufferData = ReceiveLine(clientSocket, bufferData)#clear welcome message from server
 
         for command in commands:
             SendLine(clientSocket, command)
-            response = ReceiveLine(clientSocket)
+            response, bufferData = ReceiveLine(clientSocket, bufferData)
             responses.append(response if response is not None else "")
 
     return responses
@@ -31,21 +33,20 @@ def SendLine(socketConnection: socket.socket, message: str) -> None:
     socketConnection.sendall((message + "\n").encode("utf-8"))
 
 
-def ReceiveLine(socketConnection: socket.socket) -> str | None:
-    data = bytearray()
-    while True:
-        try:
-            byteValue = socketConnection.recv(1)
-        except socket.timeout:
-            return None
+def ReceiveLine(socketConnection: socket.socket, bufferData: bytearray) -> Tuple[str | None, bytearray]:
+    while True:#data arrives in pieces
+        newlineIndex = bufferData.find(b"\n")
+        if newlineIndex != -1:
+            line = bufferData[:newlineIndex].decode("utf-8", errors="replace").rstrip("\r")
+            bufferData = bufferData[newlineIndex + 1:]
+            #line: command at a time delimited by \n
+            #bufferData: unprocessed stream \n
+            return line, bufferData 
 
-        if not byteValue:
-            return None
-
-        if byteValue == b"\n":
-            return data.decode("utf-8", errors="replace").rstrip("\r")
-
-        data.extend(byteValue)
+        data = socketConnection.recv(4096) #4096 as byte limit, Blocking state
+        if not data:
+            return None, bufferData
+        bufferData.extend(data)
 
 HTML_PAGE = """<!doctype html>
 <html>
@@ -109,8 +110,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(statusCode)
         self.send_header("Content-Type", contentType + "; charset=utf-8")
         self.send_header("Content-Length", str(len(bodyBytes)))
-        self.end_headers()
-        self.wfile.write(bodyBytes)
+        self.end_headers() #append /r/n
+        self.wfile.write(bodyBytes)#socket output stream
 
     def do_GET(self):
         if self.path == "/" or self.path.startswith("/index"):
@@ -118,7 +119,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path.startswith("/results"):
             try:
-                response = TcpSendCommands(["RESULTS"])[0]
+                response = TcpSendCommands(["RESULTS"])
+                response = response[0]
                 return self.SendResponse(200, "text/plain", response + "\n")
             except Exception as exception:
                 return self.SendResponse(
@@ -144,6 +146,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.SendResponse(400, "text/plain", "ERR usage: userId and option required\n")
 
         try:
+            #tigthly coupled, not ok
             helloResponse, voteResponse = TcpSendCommands(
                 [f"HELLO {userId}", f"VOTE {option}"]
             )
