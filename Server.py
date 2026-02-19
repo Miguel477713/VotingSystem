@@ -3,6 +3,7 @@ import threading
 import time
 import sys
 from typing import Dict, Set, Tuple
+import os
 
 host = "0.0.0.0" #all network interfaces
 port = 5050
@@ -144,6 +145,34 @@ def HandleClient(connection: socket.socket, address) -> None:
         except Exception:
             pass
 
+def LoadLog():
+    """Reads the log file to restore the votes on the memory"""
+    global votes, votedUsers
+    if not os.path.exists(auditLogFile):
+        return
+
+    print(f"[storage] Loading log from {auditLogFile}...")
+    try:
+        with open(auditLogFile, "r", encoding="utf-8") as f:
+            for line in f:
+                # We search for lines that say VOTE_ACCEPT
+                if "VOTE_ACCEPT" in line:
+                    parts = line.strip().split()
+                    user = None
+                    option = None
+                    for part in parts:
+                        if part.startswith("user="):
+                            user = part.split("=")[1]
+                        elif part.startswith("option="):
+                            option = part.split("=")[1]
+
+                    # We rebuild the memory state
+                    if user and option and user not in votedUsers:
+                        votedUsers.add(user)
+                        votes[option] += 1
+        print(f"[storage] Restored state: {votes}")
+    except Exception as e:
+        print(f"[storage] Error reading log: {e}")
 
 def Main() -> None:
     global port, auditLogFile
@@ -154,6 +183,8 @@ def Main() -> None:
         port = int(sys.argv[1])
     if len(sys.argv) >= 3:
         auditLogFile = sys.argv[2]
+
+    LoadLog()
 
     Audit(f"SERVER_START host={host} port={port} options={options}")
 
