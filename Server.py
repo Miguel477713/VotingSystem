@@ -1,6 +1,7 @@
 import socket
 import threading
 import time
+import sys
 from typing import Dict, Set, Tuple
 
 host = "0.0.0.0" #all network interfaces
@@ -145,6 +146,15 @@ def HandleClient(connection: socket.socket, address) -> None:
 
 
 def Main() -> None:
+    global port, auditLogFile
+
+    # Optional args for single-machine simulation:
+    #   python Server.py [port] [auditLogFile]
+    if len(sys.argv) >= 2:
+        port = int(sys.argv[1])
+    if len(sys.argv) >= 3:
+        auditLogFile = sys.argv[2]
+
     Audit(f"SERVER_START host={host} port={port} options={options}")
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as serverSocket:

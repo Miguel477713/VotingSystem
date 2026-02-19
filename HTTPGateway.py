@@ -3,31 +3,42 @@ import socket
 import urllib.parse
 from typing import Tuple
 
-#The server
-tcpHost = "127.0.0.1"
-tcpPort = 5050
+# TCP backends (primary first, then fallback)
+tcpBackends = [
+    ("127.0.0.1", 5050),
+    ("127.0.0.1", 5051),
+]
 
 httpHost = "0.0.0.0"
 httpPort = 8080
 
 
 def TcpSendCommands(commands: list[str], timeoutSeconds: float = 3.0) -> list[str]:
-    responses: list[str] = []
-    bufferData = bytearray()
+    lastException: Exception | None = None
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as clientSocket:
-        clientSocket.settimeout(timeoutSeconds)
-        clientSocket.connect((tcpHost, tcpPort))
+    for tcpHost, tcpPort in tcpBackends:
+        responses: list[str] = []
+        bufferData = bytearray()
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as clientSocket:
+                clientSocket.settimeout(timeoutSeconds)
+                clientSocket.connect((tcpHost, tcpPort))
 
-        _, bufferData = ReceiveLine(clientSocket, bufferData)#clear welcome message from server
+                _, bufferData = ReceiveLine(clientSocket, bufferData)#clear welcome message from server
 
-        for command in commands:
-            SendLine(clientSocket, command)
-            response, bufferData = ReceiveLine(clientSocket, bufferData)
-            responses.append(response if response is not None else "")
+                for command in commands:
+                    SendLine(clientSocket, command)
+                    response, bufferData = ReceiveLine(clientSocket, bufferData)
+                    responses.append(response if response is not None else "")
 
-    return responses
+            return responses
+        except Exception as exception:
+            lastException = exception
+            continue
 
+    if lastException is not None:
+        raise lastException
+    raise RuntimeError("No TCP backends configured")
 
 def SendLine(socketConnection: socket.socket, message: str) -> None:
     socketConnection.sendall((message + "\n").encode("utf-8"))
@@ -163,7 +174,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def Main():
-    print(f"[gateway] HTTP on http://{httpHost}:{httpPort}  ->  TCP {tcpHost}:{tcpPort}")
+    backendsText = ", ".join([f"{h}:{p}" for (h, p) in tcpBackends])
+    print(f"[gateway] HTTP on http://{httpHost}:{httpPort}  ->  TCP backends: {backendsText}")
     server = ThreadingHTTPServer((httpHost, httpPort), Handler)
     server.serve_forever()
 
