@@ -146,7 +146,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != "/vote":
             return self.SendResponse(404, "text/plain", "ERR not_found\n")
 
-        length = int(self.headers.get("Content-Length", "0"))
+        length = int(self.headers.get("Content-Length", "0")) #On no length in header, zero
         rawData = self.rfile.read(length).decode("utf-8", errors="replace")
         parsedData = urllib.parse.parse_qs(rawData)
 
