@@ -1,64 +1,119 @@
+# Import required modules for HTTP server functionality
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import socket
-import urllib.parse
-from typing import Tuple
+import socket  # For TCP socket connections
+import urllib.parse  # For parsing URL-encoded form data
+from typing import Tuple  # For type hints
 
-# TCP backends (primary first, then fallback)
+# TCP backends configuration - primary server first, then fallback servers
+# Format: (host, port) tuples
+# The gateway will try each backend in order until one succeeds
 tcpBackends = [
-    ("127.0.0.1", 5050),
-    ("127.0.0.1", 5051),
+    ("20.120.242.3", 5050),  # Primary TCP backend server
+    ("127.0.0.1", 5051),     # Fallback TCP backend server (localhost)
 ]
 
-httpHost = "0.0.0.0"
-httpPort = 8080
+# HTTP server configuration
+httpHost = "0.0.0.0"  # Listen on all network interfaces
+httpPort = 8080       # HTTP port for the gateway
 
 
 def TcpSendCommands(commands: list[str], timeoutSeconds: float = 3.0) -> list[str]:
-    lastException: Exception | None = None
+    """
+    Send commands to TCP backends with failover support.
+    
+    Args:
+        commands: List of command strings to send to the TCP server
+        timeoutSeconds: Connection timeout in seconds (default: 3.0)
+    
+    Returns:
+        List of response strings from the TCP server
+    
+    Raises:
+        Exception: If all TCP backends fail to connect
+        RuntimeError: If no TCP backends are configured
+    """
+    lastException: Exception | None = None  # Track the last exception for error reporting
 
+    # Try each TCP backend in order until one succeeds
     for tcpHost, tcpPort in tcpBackends:
-        responses: list[str] = []
-        bufferData = bytearray()
+        responses: list[str] = []  # Store responses from this backend
+        bufferData = bytearray()    # Buffer for incoming data
         try:
+            # Create TCP socket connection
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as clientSocket:
-                clientSocket.settimeout(timeoutSeconds)
-                clientSocket.connect((tcpHost, tcpPort))
+                clientSocket.settimeout(timeoutSeconds)  # Set connection timeout
+                clientSocket.connect((tcpHost, tcpPort))  # Connect to TCP backend
 
-                _, bufferData = ReceiveLine(clientSocket, bufferData)#clear welcome message from server
+                # Clear welcome message from server (first line is usually a greeting)
+                _, bufferData = ReceiveLine(clientSocket, bufferData)
 
+                # Send each command and collect responses
                 for command in commands:
-                    SendLine(clientSocket, command)
-                    response, bufferData = ReceiveLine(clientSocket, bufferData)
+                    SendLine(clientSocket, command)  # Send command to TCP server
+                    response, bufferData = ReceiveLine(clientSocket, bufferData)  # Get response
                     responses.append(response if response is not None else "")
-
+            
+            # Success! Log and return responses
+            print(f"[Gateway] ✅ Éxito conectando a {tcpHost}:{tcpPort}")
             return responses
+            
         except Exception as exception:
+            # Connection failed, try next backend
+            print(f"[Gateway] ⚠️ Falló {tcpHost}:{tcpPort}. Saltando al respaldo...")
             lastException = exception
             continue
 
+    # All backends failed, raise the last exception
     if lastException is not None:
         raise lastException
     raise RuntimeError("No TCP backends configured")
 
 def SendLine(socketConnection: socket.socket, message: str) -> None:
+    """
+    Send a line of text over a socket connection.
+    
+    Args:
+        socketConnection: The socket to send data through
+        message: The message string to send
+    """
+    # Add newline character and encode as UTF-8 bytes
     socketConnection.sendall((message + "\n").encode("utf-8"))
 
 
 def ReceiveLine(socketConnection: socket.socket, bufferData: bytearray) -> Tuple[str | None, bytearray]:
-    while True:#data arrives in pieces
+    """
+    Receive a line of text from a socket connection.
+    Handles partial data reception and buffering.
+    
+    Args:
+        socketConnection: The socket to receive data from
+        bufferData: Existing buffer data (may contain partial lines)
+    
+    Returns:
+        Tuple containing:
+        - The received line (without newline) or None if connection closed
+        - Updated buffer data (remaining unprocessed data)
+    """
+    while True:
+        # Look for newline character in buffer
         newlineIndex = bufferData.find(b"\n")
         if newlineIndex != -1:
+            # Found complete line, extract it
             line = bufferData[:newlineIndex].decode("utf-8", errors="replace").rstrip("\r")
+            # Remove the processed line from buffer
             bufferData = bufferData[newlineIndex + 1:]
-            #line: command at a time delimited by \n
-            #bufferData: unprocessed stream \n
+            # Return the line and remaining buffer data
             return line, bufferData 
 
-        data = socketConnection.recv(4096) #4096 as byte limit, Blocking state
+        # No complete line in buffer, receive more data
+        data = socketConnection.recv(4096)  # Receive up to 4096 bytes (blocking call)
         if not data:
+            # Connection closed by server
             return None, bufferData
-        bufferData.extend(data)
+        bufferData.extend(data)  # Add received data to buffer
 
+# HTML template for the voting interface web page
+# Provides a simple UI for users to vote and view results
 HTML_PAGE = """<!doctype html>
 <html>
 <head>
@@ -115,57 +170,104 @@ async function results() {
 
 
 class Handler(BaseHTTPRequestHandler):
+    """
+    HTTP request handler for the voting gateway.
+    
+    Handles HTTP requests and forwards them to TCP backends.
+    Supports:
+    - GET / or /index: Returns the voting interface HTML page
+    - GET /results: Returns current voting results
+    - POST /vote: Processes a vote submission
+    """
 
     def SendResponse(self, statusCode: int, contentType: str, body: str) -> None:
-        bodyBytes = body.encode("utf-8")
-        self.send_response(statusCode)
-        self.send_header("Content-Type", contentType + "; charset=utf-8")
-        self.send_header("Content-Length", str(len(bodyBytes)))
-        self.end_headers() #append /r/n
-        self.wfile.write(bodyBytes)#socket output stream
+        """
+        Send an HTTP response with the specified status, content type, and body.
+        
+        Args:
+            statusCode: HTTP status code (e.g., 200, 404, 500)
+            contentType: MIME type of the response body
+            body: Response body content as string
+        """
+        bodyBytes = body.encode("utf-8")  # Convert body to bytes
+        self.send_response(statusCode)  # Send status line
+        self.send_header("Content-Type", contentType + "; charset=utf-8")  # Set content type
+        self.send_header("Content-Length", str(len(bodyBytes)))  # Set content length
+        self.end_headers()  # End headers section (adds \r\n)
+        self.wfile.write(bodyBytes)  # Write body to response stream
 
     def do_GET(self):
+        """
+        Handle HTTP GET requests.
+        
+        Supported endpoints:
+        - GET / or /index: Returns the voting interface HTML page
+        - GET /results: Returns current voting results from TCP backend
+        """
+        # Serve the main voting interface page
         if self.path == "/" or self.path.startswith("/index"):
             return self.SendResponse(200, "text/html", HTML_PAGE)
 
+        # Handle results request
         if self.path.startswith("/results"):
             try:
+                # Send RESULTS command to TCP backend
                 response = TcpSendCommands(["RESULTS"])
-                response = response[0]
+                response = response[0]  # Get first (and only) response
                 return self.SendResponse(200, "text/plain", response + "\n")
             except Exception as exception:
+                # Return error if TCP backend fails
                 return self.SendResponse(
                     500,
                     "text/plain",
                     f"ERR gateway_failure {type(exception).__name__}:{exception}\n"
                 )
 
+        # Return 404 for unknown endpoints
         return self.SendResponse(404, "text/plain", "ERR not_found\n")
 
     def do_POST(self):
+        """
+        Handle HTTP POST requests.
+        
+        Supported endpoints:
+        - POST /vote: Processes a vote submission with userId and option
+        
+        Expected form data:
+        - userId: Unique identifier for the voter
+        - option: Voting option (A, B, or C)
+        """
+        # Only handle /vote endpoint
         if self.path != "/vote":
             return self.SendResponse(404, "text/plain", "ERR not_found\n")
 
+        # Read and parse form data from request body
         length = int(self.headers.get("Content-Length", "0"))
         rawData = self.rfile.read(length).decode("utf-8", errors="replace")
         parsedData = urllib.parse.parse_qs(rawData)
 
+        # Extract userId and option from form data
         userId = (parsedData.get("userId", [""])[0]).strip()
         option = (parsedData.get("option", [""])[0]).strip().upper()
 
+        # Validate required parameters
         if not userId or not option:
             return self.SendResponse(400, "text/plain", "ERR usage: userId and option required\n")
 
         try:
-            #tigthly coupled, not ok
+            # Send commands to TCP backend
+            # NOTE: This implementation is tightly coupled to the TCP protocol
+            # It expects HELLO command to register user, then VOTE command
             helloResponse, voteResponse = TcpSendCommands(
                 [f"HELLO {userId}", f"VOTE {option}"]
             )
 
+            # Return both responses to client
             body = f"{helloResponse}\n{voteResponse}\n"
             return self.SendResponse(200, "text/plain", body)
 
         except Exception as exception:
+            # Return error if TCP backend fails
             return self.SendResponse(
                 500,
                 "text/plain",
@@ -174,11 +276,21 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def Main():
+    """
+    Main entry point for the HTTP gateway server.
+    
+    Starts the HTTP server that acts as a gateway between
+    HTTP clients and TCP voting backends.
+    """
+    # Display server configuration
     backendsText = ", ".join([f"{h}:{p}" for (h, p) in tcpBackends])
     print(f"[gateway] HTTP on http://{httpHost}:{httpPort}  ->  TCP backends: {backendsText}")
+    
+    # Create and start the threaded HTTP server
     server = ThreadingHTTPServer((httpHost, httpPort), Handler)
-    server.serve_forever()
+    server.serve_forever()  # Run indefinitely
 
 
+# Run the gateway server when this script is executed directly
 if __name__ == "__main__":
     Main()
