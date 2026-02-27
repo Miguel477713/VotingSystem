@@ -1,8 +1,11 @@
 import socket
 import threading
-import time
 import sys
-from typing import Dict, Set, Tuple
+from typing import Tuple
+
+from LogVoteRepository import LogVoteRepository
+from VoteRepositoryBase import VoteRepositoryBase
+
 
 host = "0.0.0.0" #all network interfaces
 port = 5050
@@ -10,26 +13,7 @@ port = 5050
 options = ["A", "B", "C"]
 auditLogFile = "audit.log"
 
-votes: Dict[str, int] = {option: 0 for option in options}
-votedUsers: Set[str] = set()
-
-stateLock = threading.Lock()
-logLock = threading.Lock()
-
-
-
-def Audit(event: str) -> None:
-    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-    line = f"{timestamp} {event}\n"
-    #with is equivalent to:
-    #logLock.acquire()
-    #try:
-        # critical section
-    #finally:
-    #    logLock.release()
-    with logLock:
-        with open(auditLogFile, "a", encoding="utf-8") as file:
-            file.write(line)
+voteRepository: VoteRepositoryBase | None = None
 
 
 def SendLine(connection: socket.socket, message: str) -> None:
@@ -52,13 +36,9 @@ def ReceiveLine(connection: socket.socket, bufferData: bytearray) -> Tuple[str |
         bufferData.extend(data)
 
 
-def SnapshotResults() -> str:
-    with stateLock:
-        parts = [f"{option}={votes.get(option, 0)}" for option in options]
-    return "RESULTS " + " ".join(parts)
-
-
 def HandleClient(connection: socket.socket, address) -> None:
+    global voteRepository
+
     userId = None
     bufferData = bytearray()
 
@@ -70,7 +50,7 @@ def HandleClient(connection: socket.socket, address) -> None:
 
             if line is None:
                 if userId is not None:
-                    Audit(f"DISCONNECT user={userId} addr={address}")
+                    voteRepository.Audit(f"DISCONNECT user={userId} addr={address}")
                 break
 
             line = line.strip()
@@ -86,7 +66,7 @@ def HandleClient(connection: socket.socket, address) -> None:
                     continue
 
                 userId = parts[1]
-                Audit(f"LOGIN user={userId} addr={address}")
+                voteRepository.Audit(f"LOGIN user={userId} addr={address}")
                 SendLine(connection, f"OK Hello {userId}. Options: {','.join(options)}")
 
             elif command == "VOTE":
@@ -104,22 +84,18 @@ def HandleClient(connection: socket.socket, address) -> None:
                     SendLine(connection, "ERR invalid_option")
                     continue
 
-                with stateLock:
-                    if userId in votedUsers:
-                        SendLine(connection, "ERR already_voted")
-                        Audit(f"VOTE_REJECT user={userId} reason=already_voted")
-                        continue
+                accepted, reason = voteRepository.TryRecordVote(userId, option)
+                if not accepted:
+                    SendLine(connection, f"ERR {reason}")
+                    voteRepository.Audit(f"VOTE_REJECT user={userId} reason={reason}")
+                    continue
 
-                    votedUsers.add(userId)
-                    votes[option] += 1
-
-                Audit(f"VOTE_ACCEPT user={userId} option={option}")
                 SendLine(connection, "OK vote_recorded")
 
             elif command == "RESULTS":
-                SendLine(connection, SnapshotResults())
+                SendLine(connection, voteRepository.SnapshotResults())
                 if userId is not None:
-                    Audit(f"RESULTS user={userId}")
+                    voteRepository.Audit(f"RESULTS user={userId}")
 
             elif command == "PING":
                 SendLine(connection, "OK pong")
@@ -127,7 +103,7 @@ def HandleClient(connection: socket.socket, address) -> None:
             elif command == "QUIT":
                 SendLine(connection, "OK bye")
                 if userId is not None:
-                    Audit(f"QUIT user={userId}")
+                    voteRepository.Audit(f"QUIT user={userId}")
                 break
 
             else:
@@ -135,9 +111,9 @@ def HandleClient(connection: socket.socket, address) -> None:
 
     except ConnectionResetError:
         if userId is not None:
-            Audit(f"DISCONNECT_RESET user={userId} addr={address}")
+            voteRepository.Audit(f"DISCONNECT_RESET user={userId} addr={address}")
     except Exception as exception:
-        Audit(f"SERVER_ERROR addr={address} err={type(exception).__name__}:{exception}")
+        voteRepository.Audit(f"SERVER_ERROR addr={address} err={type(exception).__name__}:{exception}")
     finally:
         try:
             connection.close()
@@ -146,7 +122,7 @@ def HandleClient(connection: socket.socket, address) -> None:
 
 
 def Main() -> None:
-    global port, auditLogFile
+    global port, auditLogFile, voteRepository
 
     # Optional args for single-machine simulation:
     #   python Server.py [port] [auditLogFile]
@@ -155,7 +131,12 @@ def Main() -> None:
     if len(sys.argv) >= 3:
         auditLogFile = sys.argv[2]
 
-    Audit(f"SERVER_START host={host} port={port} options={options}")
+    createdRepository = LogVoteRepository(options=options, auditLogFile=auditLogFile)
+    if not isinstance(createdRepository, VoteRepositoryBase):
+        raise TypeError("Repository does not implement VoteRepositoryBase contract")
+
+    voteRepository = createdRepository
+    voteRepository.Audit(f"SERVER_START host={host} port={port} options={options}")
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as serverSocket:
         serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)#interminence 
