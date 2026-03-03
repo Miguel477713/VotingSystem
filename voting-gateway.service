@@ -3,11 +3,10 @@ Description=Voting HTTP Gateway
 After=network.target voting-tcp.service
 
 [Service]
-WorkingDirectory=/home/azureuser/voting
-ExecStart=/usr/bin/python3 /home/azureuser/voting/HTTPGateway.py
+WorkingDirectory=/home/VotingSystem
+ExecStart=/usr/bin/python3 /home/VotingSystem/HTTPGateway.py
 Restart=always
 RestartSec=2
-User=azureuser
 
 [Install]
 WantedBy=multi-user.target

@@ -1,6 +1,6 @@
 #Enable on restart at multi-user.target
 sudo systemctl daemon-reload
-sudo systemctl enable --now voting-primary-tcp.service voting-secondary-tcp.service voting-gateway.service
+sudo systemctl enable --now voting-tcp.service voting-failover.service
 
 #Process status
 sudo systemctl status voting-gateway.service
@@ -10,4 +10,14 @@ sudo journalctl -u voting-gateway.service -f
 sudo systemctl stop voting-gateway.service voting-secondary-tcp.service voting-primary-tcp.service
 
 #Start services
-sudo systemctl start voting-gateway.service voting-secondary-tcp.service voting-primary-tcp.service
+sudo systemctl start voting-gateway.service voting-tcp.service
+
+#Manual assignment of IP to ethernet interface
+sudo ip addr add 169.254.236.20/24 dev eth0  
+sudo ip link set eth0 up
+
+#Reset interface
+sudo ip addr flush dev eth0
+
+#List listening TCP/UDP ports
+ss -tulnp 

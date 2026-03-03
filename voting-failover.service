@@ -1,0 +1,12 @@
+[Unit]
+Description=Voting Failover Controller
+After=network.target
+
+[Service]
+WorkingDirectory=/home/VotingSystem
+ExecStart=/usr/bin/python3 /home/VotingSystem/FailOverController.py 5050 169.254.236.19
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

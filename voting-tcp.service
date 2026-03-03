@@ -1,0 +1,12 @@
+[Unit]
+Description=Voting TCP Server
+After=network.target
+
+[Service]
+WorkingDirectory=/home/VotingSystem
+ExecStart=/usr/bin/python3 /home/VotingSystem/Server.py 5050 /home/VotingSystem/Audit.log
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
