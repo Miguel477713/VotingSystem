@@ -7,7 +7,7 @@ sudo systemctl status voting-gateway.service
 sudo journalctl -u voting-gateway.service -f
 
 #Stop services
-sudo systemctl stop voting-gateway.service voting-secondary-tcp.service voting-primary-tcp.service
+sudo systemctl stop voting-gateway.service voting-tcp.service voting-failover.service
 
 #Start services
 sudo systemctl start voting-gateway.service voting-tcp.service
@@ -16,8 +16,8 @@ sudo systemctl start voting-gateway.service voting-tcp.service
 sudo ip addr add 169.254.236.20/24 dev eth0  
 sudo ip link set eth0 up
 
-#Reset interface
+#Reset IP interface
 sudo ip addr flush dev eth0
 
 #List listening TCP/UDP ports
-ss -tulnp 
+ss -tulnp

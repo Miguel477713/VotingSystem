@@ -1,11 +1,12 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import socket
 import urllib.parse
+import time
 from typing import Tuple
 
 # TCP backends (primary first, then fallback)
 tcpBackends = [
-    ("127.0.0.1", 5050),
+    ("169.254.236.21", 5050),
     ("169.254.236.20", 5050),
     ("20.120.242.3", 5050)
 ]
@@ -13,13 +14,31 @@ tcpBackends = [
 httpHost = "0.0.0.0"
 httpPort = 8080
 
+backendFailureCooldownSeconds = 30
+backendDownUntilByIndex: list[float] = [0.0 for _ in tcpBackends]
+lastGoodBackendIndex = 0
 
-def TcpSendCommands(commands: list[str], timeoutSeconds: float = 3.0) -> list[str]:
+
+def TcpSendCommands(commands: list[str], timeoutSeconds: float = 0.6) -> list[str]:
+    global lastGoodBackendIndex
     lastException: Exception | None = None
 
-    for tcpHost, tcpPort in tcpBackends:
+    backendCount = len(tcpBackends)
+    if backendCount == 0:
+        raise RuntimeError("No TCP backends configured")
+
+    # Try last known good backend first, then the rest (round-robin).
+    for i in range(backendCount):
+        backendIndex = (lastGoodBackendIndex + i) % backendCount
+
+        # If this backend recently failed, skip it until cooldown expires.
+        if time.time() < backendDownUntilByIndex[backendIndex]:
+            continue
+
+        tcpHost, tcpPort = tcpBackends[backendIndex]
         responses: list[str] = []
         bufferData = bytearray()
+
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as clientSocket:
                 clientSocket.settimeout(timeoutSeconds)
@@ -32,9 +51,16 @@ def TcpSendCommands(commands: list[str], timeoutSeconds: float = 3.0) -> list[st
                     response, bufferData = ReceiveLine(clientSocket, bufferData)
                     responses.append(response if response is not None else "")
 
+            # Success: remember this backend as last-good and clear any cooldown.
+            lastGoodBackendIndex = backendIndex
+            backendDownUntilByIndex[backendIndex] = 0.0
             return responses
+
         except Exception as exception:
             lastException = exception
+
+            # Mark backend as down for a short cooldown to avoid retrying it every request.
+            backendDownUntilByIndex[backendIndex] = time.time() + backendFailureCooldownSeconds
             continue
 
     if lastException is not None:
@@ -59,6 +85,7 @@ def ReceiveLine(socketConnection: socket.socket, bufferData: bytearray) -> Tuple
         if not data:
             return None, bufferData
         bufferData.extend(data)
+
 
 HTML_PAGE = """<!doctype html>
 <html>

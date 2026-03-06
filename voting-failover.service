@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 WorkingDirectory=/home/VotingSystem
-ExecStart=/usr/bin/python3 /home/VotingSystem/FailOverController.py 5050 169.254.236.19
+ExecStart=/usr/bin/python3 /home/VotingSystem/FailOverController.py 5050 169.254.236.21
 Restart=always
 RestartSec=1
 
