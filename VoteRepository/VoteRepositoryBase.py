@@ -7,11 +7,7 @@ class VoteRepositoryBase(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def LoadLog(self) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    def SnapshotResults(self) -> str:
+    def GetSnapshotResults(self) -> str:
         raise NotImplementedError
 
     @abstractmethod

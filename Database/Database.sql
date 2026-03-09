@@ -1,0 +1,33 @@
+CREATE TABLE VoteOptions (
+    OptionCode NVARCHAR(10) NOT NULL PRIMARY KEY,
+    VoteCount INT NOT NULL CONSTRAINT DF_VoteOptions_VoteCount DEFAULT (0)
+);
+
+CREATE TABLE VoteAuditEvents (
+    EventId BIGINT IDENTITY(1,1) PRIMARY KEY,
+    EventType NVARCHAR(50) NOT NULL,
+    UserId NVARCHAR(100) NULL,
+    OptionCode NVARCHAR(10) NULL,
+    Details NVARCHAR(4000) NULL,
+    CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
+CREATE TABLE Votes (
+    VoteId BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    UserId NVARCHAR(100) NOT NULL,
+    OptionCode NVARCHAR(10) NOT NULL,
+    CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Votes_CreatedAt DEFAULT (SYSUTCDATETIME()),
+
+    CONSTRAINT UQ_Votes_UserId UNIQUE (UserId),
+    CONSTRAINT FK_Votes_VoteOptions
+        FOREIGN KEY (OptionCode) REFERENCES VoteOptions(OptionCode)
+);
+
+CREATE TABLE Leadership (
+    ResourceName NVARCHAR(100) PRIMARY KEY,
+    LeaderId NVARCHAR(100) NOT NULL,
+    LeaseUntil DATETIME2 NOT NULL
+);
+
+INSERT INTO VoteOptions (OptionCode, VoteCount)
+VALUES ('A', 0), ('B', 0), ('C', 0);

@@ -3,24 +3,14 @@ import subprocess
 import time
 from typing import Optional
 import sys
+import os
 
-
-PRIMARY_HOST = "169.254.236.19"
-PRIMARY_PORT = 5050
+from VoteRepository.SqlServer.SqlLeadershipService import SqlLeadershipService
 
 SECONDARY_SERVICE = "voting-tcp.service"  # systemd unit
 
-CHECK_INTERVAL_SECONDS = 1.0
-CONNECT_TIMEOUT_SECONDS = 0.8
-
-
-def IsPrimaryReachable(host: str, port: int, timeoutSeconds: float) -> bool:
-    try:
-        with socket.create_connection((host, port), timeout=timeoutSeconds):
-            return True
-    except OSError:
-        return False
-
+CHECK_INTERVAL_SECONDS = 3.0
+LEASE_EXPIRE = 10
 
 def RunSystemctl(args: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(
@@ -45,40 +35,35 @@ def StopService(serviceName: str) -> None:
 
 
 def Main() -> None:
-    global PRIMARY_HOST, PRIMARY_PORT
+    connectionString = os.environ["VOTING_SQL_CONNECTION_STRING"]
+    hostName = socket.gethostname()
 
-    # Optional args for single-machine simulation:
-    if len(sys.argv) >= 2:
-        PRIMARY_PORT = int(sys.argv[1])
-    if len(sys.argv) >= 3:
-        PRIMARY_HOST = sys.argv[2]
-    lastAction: Optional[str] = None
+    leadershipService = SqlLeadershipService(connectionString=connectionString, resourceName="VotingLeader", 
+                                             leaseSeconds=LEASE_EXPIRE)
+    active = IsServiceActive(SECONDARY_SERVICE)
 
     while True:
-        primaryUp = IsPrimaryReachable(PRIMARY_HOST, PRIMARY_PORT, CONNECT_TIMEOUT_SECONDS)
+        try:
+            if active:
+                renewed = leadershipService.RenewLeadership(hostName)
 
-        if primaryUp:
-            # Primary reachable: ensure standby is stopped
-            if IsServiceActive(SECONDARY_SERVICE):
-                StopService(SECONDARY_SERVICE)
-                lastAction = "stopped-secondary"
-                print("[failover] primary reachable -> stopping secondary")
+                if not renewed:
+                    if IsServiceActive(SECONDARY_SERVICE):
+                        StopService(SECONDARY_SERVICE)
+                    active = False
             else:
-                if lastAction != "secondary-already-stopped":
-                    print("[failover] primary reachable -> secondary already stopped")
-                    lastAction = "secondary-already-stopped"
-        else:
-            # Primary unreachable: ensure standby is started
-            if not IsServiceActive(SECONDARY_SERVICE):
-                StartService(SECONDARY_SERVICE)
-                lastAction = "started-secondary"
-                print("[failover] primary unreachable -> starting secondary")
-            else:
-                if lastAction != "secondary-already-running":
-                    print("[failover] primary unreachable -> secondary already running")
-                    lastAction = "secondary-already-running"
+                acquired = leadershipService.TryAcquireLeadership(hostName)
 
-        time.sleep(CHECK_INTERVAL_SECONDS)
+                if acquired:
+                    if not IsServiceActive(SECONDARY_SERVICE):
+                        StartService(SECONDARY_SERVICE)
+                    active = True
+
+            time.sleep(CHECK_INTERVAL_SECONDS)
+
+        except Exception as error:
+            print(f"[failover] error: {error}")
+            time.sleep(CHECK_INTERVAL_SECONDS)
 
 
 if __name__ == "__main__":

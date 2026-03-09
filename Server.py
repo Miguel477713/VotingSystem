@@ -1,17 +1,17 @@
+import os
 import socket
 import threading
 import sys
 from typing import Tuple
 
-from LogVoteRepository import LogVoteRepository
-from VoteRepositoryBase import VoteRepositoryBase
+from VoteRepository.SqlServer.SqlVoteRepository import SqlVoteRepository
+from VoteRepository.VoteRepositoryBase import VoteRepositoryBase
 
 
 host = "0.0.0.0" #all network interfaces
 port = 5050
 
 options = ["A", "B", "C"]
-auditLogFile = "audit.log"
 
 voteRepository: VoteRepositoryBase | None = None
 
@@ -50,7 +50,7 @@ def HandleClient(connection: socket.socket, address) -> None:
 
             if line is None:
                 if userId is not None:
-                    voteRepository.Audit(f"DISCONNECT user={userId} addr={address}")
+                    voteRepository.Audit("DISCONNECT", userId=userId, details=f"addr={address}")
                 break
 
             line = line.strip()
@@ -66,7 +66,7 @@ def HandleClient(connection: socket.socket, address) -> None:
                     continue
 
                 userId = parts[1]
-                voteRepository.Audit(f"LOGIN user={userId} addr={address}")
+                voteRepository.Audit("LOGIN", userId=userId, details=f"addr={address}")
                 SendLine(connection, f"OK Hello {userId}. Options: {','.join(options)}")
 
             elif command == "VOTE":
@@ -87,15 +87,14 @@ def HandleClient(connection: socket.socket, address) -> None:
                 accepted, reason = voteRepository.TryRecordVote(userId, option)
                 if not accepted:
                     SendLine(connection, f"ERR {reason}")
-                    voteRepository.Audit(f"VOTE_REJECT user={userId} reason={reason}")
                     continue
 
                 SendLine(connection, "OK vote_recorded")
 
             elif command == "RESULTS":
-                SendLine(connection, voteRepository.SnapshotResults())
+                SendLine(connection, voteRepository.GetSnapshotResults())
                 if userId is not None:
-                    voteRepository.Audit(f"RESULTS user={userId}")
+                    voteRepository.Audit("RESULTS", userId=userId)
 
             elif command == "PING":
                 SendLine(connection, "OK pong")
@@ -103,17 +102,12 @@ def HandleClient(connection: socket.socket, address) -> None:
             elif command == "QUIT":
                 SendLine(connection, "OK bye")
                 if userId is not None:
-                    voteRepository.Audit(f"QUIT user={userId}")
+                    voteRepository.Audit("QUIT", userId=userId)
                 break
 
             else:
                 SendLine(connection, "ERR unknown_command")
 
-    except ConnectionResetError:
-        if userId is not None:
-            voteRepository.Audit(f"DISCONNECT_RESET user={userId} addr={address}")
-    except Exception as exception:
-        voteRepository.Audit(f"SERVER_ERROR addr={address} err={type(exception).__name__}:{exception}")
     finally:
         try:
             connection.close()
@@ -122,21 +116,20 @@ def HandleClient(connection: socket.socket, address) -> None:
 
 
 def Main() -> None:
-    global port, auditLogFile, voteRepository
+    global port, voteRepository
 
-    # Optional args for single-machine simulation:
-    #   python Server.py [port] [auditLogFile]
     if len(sys.argv) >= 2:
         port = int(sys.argv[1])
-    if len(sys.argv) >= 3:
-        auditLogFile = sys.argv[2]
 
-    createdRepository = LogVoteRepository(options=options, auditLogFile=auditLogFile)
+    connectionString = os.environ["VOTING_SQL_CONNECTION_STRING"]
+
+    createdRepository = SqlVoteRepository(options=options, connectionString=connectionString)
+
     if not isinstance(createdRepository, VoteRepositoryBase):
         raise TypeError("Repository does not implement VoteRepositoryBase contract")
 
     voteRepository = createdRepository
-    voteRepository.Audit(f"SERVER_START host={host} port={port} options={options}")
+    voteRepository.Audit("SERVER_START", details=f"host={host} port={port} options={options}")
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as serverSocket:
         serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)#interminence 
