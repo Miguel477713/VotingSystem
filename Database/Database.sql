@@ -31,3 +31,13 @@ CREATE TABLE Leadership (
 
 INSERT INTO VoteOptions (OptionCode, VoteCount)
 VALUES ('A', 0), ('B', 0), ('C', 0);
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM Leadership
+    WHERE ResourceName = 'VotingLeader'
+)
+BEGIN
+    INSERT INTO Leadership (ResourceName, LeaderId, LeaseUntil)
+    VALUES ('VotingLeader', 'NONE', '2000-01-01T00:00:00')
+END

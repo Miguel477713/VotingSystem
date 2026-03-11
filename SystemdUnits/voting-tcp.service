@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 WorkingDirectory=/home/VotingSystem
-Environment="VOTING_SQL_CONNECTION_STRING=Server=tcp:voting-system-server.database.windows.net,1433;Initial Catalog=VotingSystemDatabase;Persist Security Info=False;User ID=miguel;Password=squareTemp1;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
+Environment="VOTING_SQL_CONNECTION_STRING=Driver={ODBC Driver 18 for SQL Server};Server=tcp:voting-system-server.database.windows.net,1433;Database=VotingSystemDatabase;Uid=miguel;Pwd=squareTemp1;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"
 ExecStart=/usr/bin/python3 /home/VotingSystem/Server.py 5050
 Restart=always
 RestartSec=2

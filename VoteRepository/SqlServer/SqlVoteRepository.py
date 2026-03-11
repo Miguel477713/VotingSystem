@@ -3,7 +3,7 @@ from typing import List, Tuple
 
 import pyodbc
 
-from VoteRepositoryBase import VoteRepositoryBase
+from ..VoteRepositoryBase import VoteRepositoryBase
 
 
 class SqlVoteRepository(VoteRepositoryBase):

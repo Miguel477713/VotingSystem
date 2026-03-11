@@ -24,8 +24,8 @@ netstat -ano | findstr LISTENING
 Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
 
 #Set env variable for current session
-set VOTING_SQL_CONNECTION_STRING=Driver={ODBC Driver 18 for SQL Server};Server=...
+set VOTING_SQL_CONNECTION_STRING=Server=tcp:voting-system-server.database.windows.net,1433;Initial Catalog=VotingSystemDatabase;Persist Security Info=False;User ID=miguel;Password=squareTemp1;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;
 
 #Set env variable permanently
-setx VOTING_SQL_CONNECTION_STRING "Driver={ODBC Driver 18 for SQL Server};Server=..."
+setx VOTING_SQL_CONNECTION_STRING "Driver={ODBC Driver 18 for SQL Server};Server=tcp:voting-system-server.database.windows.net,1433;Database=VotingSystemDatabase;Uid=miguel;Pwd=squareTemp1;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"
 

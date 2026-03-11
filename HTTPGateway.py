@@ -6,9 +6,9 @@ from typing import Tuple
 
 # TCP backends (primary first, then fallback)
 tcpBackends = [
+    ("127.0.0.1", 5050),
     ("169.254.236.21", 5050),
-    ("169.254.236.20", 5050),
-    ("20.120.242.3", 5050)
+    ("169.254.236.20", 5050)
 ]
 
 httpHost = "0.0.0.0"
@@ -19,32 +19,40 @@ backendDownUntilByIndex: list[float] = [0.0 for _ in tcpBackends]
 lastGoodBackendIndex = 0
 
 
-def TcpSendCommands(commands: list[str], timeoutSeconds: float = 0.6) -> list[str]:
+def TcpSendCommands(commands: list[str], timeoutSeconds: float = 2) -> list[str]:
     global lastGoodBackendIndex
     lastException: Exception | None = None
+    print(f"[gateway] lastGoodBackendIndex={lastGoodBackendIndex}")
+    print(f"[gateway] backendDownUntil={backendDownUntilByIndex}")
 
     backendCount = len(tcpBackends)
     if backendCount == 0:
         raise RuntimeError("No TCP backends configured")
+        
+    currentTime = time.time()
+    indexesToTry = []
 
-    # Try last known good backend first, then the rest (round-robin).
     for i in range(backendCount):
         backendIndex = (lastGoodBackendIndex + i) % backendCount
+        if currentTime > backendDownUntilByIndex[backendIndex]:
+            indexesToTry.append(backendIndex)
 
-        # If this backend recently failed, skip it until cooldown expires.
-        if time.time() < backendDownUntilByIndex[backendIndex]:
-            continue
+    if not indexesToTry:#if everything in cooldown, retry everything
+        for i in range(backendCount):
+            backendIndex = (lastGoodBackendIndex + i) % backendCount
+            indexesToTry.append(backendIndex)
 
+    # Try last known good backend first, then the rest (round-robin).
+    for backendIndex in indexesToTry:
         tcpHost, tcpPort = tcpBackends[backendIndex]
         responses: list[str] = []
         bufferData = bytearray()
 
+        print(f"[gateway] trying backend {backendIndex} -> {tcpHost}:{tcpPort}")
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as clientSocket:
                 clientSocket.settimeout(timeoutSeconds)
                 clientSocket.connect((tcpHost, tcpPort))
-
-                _, bufferData = ReceiveLine(clientSocket, bufferData)#clear welcome message from server
 
                 for command in commands:
                     SendLine(clientSocket, command)
@@ -53,6 +61,7 @@ def TcpSendCommands(commands: list[str], timeoutSeconds: float = 0.6) -> list[st
 
             # Success: remember this backend as last-good and clear any cooldown.
             lastGoodBackendIndex = backendIndex
+            print(f"[gateway] using backend {tcpHost}:{tcpPort}")
             backendDownUntilByIndex[backendIndex] = 0.0
             return responses
 
@@ -61,11 +70,12 @@ def TcpSendCommands(commands: list[str], timeoutSeconds: float = 0.6) -> list[st
 
             # Mark backend as down for a short cooldown to avoid retrying it every request.
             backendDownUntilByIndex[backendIndex] = time.time() + backendFailureCooldownSeconds
+            print(f"[gateway] backend FAILED {tcpHost}:{tcpPort} -> {type(exception).__name__}: {exception}")
             continue
 
     if lastException is not None:
         raise lastException
-    raise RuntimeError("No TCP backends configured")
+    raise RuntimeError("No TCP backends currently available")
 
 def SendLine(socketConnection: socket.socket, message: str) -> None:
     socketConnection.sendall((message + "\n").encode("utf-8"))

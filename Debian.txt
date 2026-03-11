@@ -5,6 +5,7 @@ sudo systemctl enable --now voting-tcp.service voting-failover.service
 #Process status
 sudo systemctl status voting-gateway.service
 sudo journalctl -u voting-gateway.service -f
+journalctl -u voting-failover.service -n 50 --no-pager
 
 #Stop services
 sudo systemctl stop voting-gateway.service voting-tcp.service voting-failover.service
@@ -22,9 +23,9 @@ sudo ip addr flush dev eth0
 #List listening TCP/UDP ports
 ss -tulnp
 
-#Unmount cloud storage
-sudo umount /media/voting-system-files 
-1303
-
 #Set env variable for current session
-export VOTING_SQL_CONNECTION_STRING="Driver={ODBC Driver 18 for SQL Server};Server=tcp:<your-server>.database.windows.net,1433;Database=VotingDb;Uid=<user>;Pwd=<password>;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"
+export VOTING_SQL_CONNECTION_STRING="Server=tcp:voting-system-server.database.windows.net,1433;Initial Catalog=VotingSystemDatabase;Persist Security Info=False;User ID=miguel;Password=squareTemp1;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
+
+#Set env variable permanently
+echo 'export VOTING_SQL_CONNECTION_STRING="Server=tcp:voting-system-server.database.windows.net,1433;Initial Catalog=VotingSystemDatabase;Persist Security Info=False;User ID=miguel;Password=squareTemp1;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"' >> ~/.bashrc
+source ~/.bashrc
