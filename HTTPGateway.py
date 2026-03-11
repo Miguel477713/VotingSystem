@@ -7,8 +7,8 @@ from typing import Tuple
 # TCP backends (primary first, then fallback)
 tcpBackends = [
     ("127.0.0.1", 5050),
-    ("169.254.236.21", 5050),
-    ("169.254.236.20", 5050)
+    ("169.254.236.20", 5050),
+    ("169.254.236.21", 5050)
 ]
 
 httpHost = "0.0.0.0"

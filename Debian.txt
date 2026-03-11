@@ -1,14 +1,14 @@
 #Enable on restart at multi-user.target
 sudo systemctl daemon-reload
-sudo systemctl enable --now voting-tcp.service voting-failover.service
+sudo systemctl enable --now voting-tcp.service
 
 #Process status
 sudo systemctl status voting-gateway.service
 sudo journalctl -u voting-gateway.service -f
-journalctl -u voting-failover.service -n 50 --no-pager
+journalctl -u voting-tcp.service -n 50 --no-pager
 
 #Stop services
-sudo systemctl stop voting-gateway.service voting-tcp.service voting-failover.service
+sudo systemctl stop voting-gateway.service voting-tcp.service
 
 #Start services
 sudo systemctl start voting-gateway.service voting-tcp.service
