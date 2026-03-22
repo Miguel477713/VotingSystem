@@ -1,0 +1,29 @@
+import pyodbc
+conn_str = "Driver={ODBC Driver 18 for SQL Server};Server=tcp:voting-system-server.database.windows.net,1433;Database=VotingSystemDatabase;Uid=miguel;Pwd=squareTemp1;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"
+try:
+    with pyodbc.connect(conn_str, autocommit=True) as conn:
+        cursor = conn.cursor()
+        
+        statements = [
+            "CREATE TABLE VoteOptions (OptionCode NVARCHAR(10) NOT NULL PRIMARY KEY, VoteCount INT NOT NULL CONSTRAINT DF_VoteOptions_VoteCount DEFAULT (0));",
+            "CREATE TABLE VoteAuditEvents (EventId BIGINT IDENTITY(1,1) PRIMARY KEY, EventType NVARCHAR(50) NOT NULL, UserId NVARCHAR(100) NULL, OptionCode NVARCHAR(10) NULL, Details NVARCHAR(4000) NULL, CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME());",
+            "CREATE TABLE VotingTokens (TokenId NVARCHAR(100) PRIMARY KEY, IssuedToEmail NVARCHAR(255) NOT NULL, CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME());",
+            "CREATE TABLE Votes (VoteId BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY, UserId NVARCHAR(100) NOT NULL, OptionCode NVARCHAR(10) NOT NULL, CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Votes_CreatedAt DEFAULT (SYSUTCDATETIME()), CONSTRAINT UQ_Votes_UserId UNIQUE (UserId), CONSTRAINT FK_Votes_VoteOptions FOREIGN KEY (OptionCode) REFERENCES VoteOptions(OptionCode));",
+            "CREATE TABLE Leadership (ResourceName NVARCHAR(100) PRIMARY KEY, LeaderId NVARCHAR(100) NOT NULL, LeaseUntil DATETIME2 NOT NULL);",
+            "INSERT INTO VoteOptions (OptionCode, VoteCount) VALUES ('A', 0), ('B', 0), ('C', 0);",
+            "IF NOT EXISTS (SELECT 1 FROM Leadership WHERE ResourceName = 'VotingLeader') BEGIN INSERT INTO Leadership (ResourceName, LeaderId, LeaseUntil) VALUES ('VotingLeader', 'NONE', '2000-01-01T00:00:00') END"
+        ]
+        
+        for stmt in statements:
+            try:
+                cursor.execute(stmt)
+                print(f"Executed OK: {stmt[:50]}...")
+            except pyodbc.ProgrammingError as e:
+                # E.g. table already exists
+                print(f"Skipped/Error on {stmt[:50]}...: {e}")
+            except Exception as e:
+                print(f"Error on {stmt[:50]}...: {e}")
+        
+        print("Database initialized.")
+except Exception as e:
+    print(f"Database connection error: {e}")

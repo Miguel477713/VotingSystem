@@ -137,6 +137,30 @@ class SqlVoteRepository(VoteRepositoryBase):
 
             cursor.execute(
                 """
+                SELECT 1
+                FROM VotingTokens
+                WHERE TokenId = ?
+                """,
+                userId
+            )
+            validToken = cursor.fetchone()
+            
+            if validToken is None:
+                cursor.execute(
+                    """
+                    INSERT INTO VoteAuditEvents (EventType, UserId, OptionCode, Details)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    "VOTE_REJECT",
+                    userId,
+                    option,
+                    "invalid_token"
+                )
+                connection.commit()
+                return False, "invalid_token"
+
+            cursor.execute(
+                """
                 INSERT INTO Votes (UserId, OptionCode)
                 VALUES (?, ?)
                 """,
